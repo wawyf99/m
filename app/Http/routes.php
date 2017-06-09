@@ -11,6 +11,39 @@
 |
 */
 
-Route::get('/', function () {
+/*Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('user/{id}', function ($id) {
+    return 'User '.$id;
+});
+
+Route::get('posts/{post}/comments/{comment}', function ($postId, $commentId) {
+    //
+    var_dump($postId);
+    var_dump($commentId);
+});*/
+
+/*Route::group(['middleware' => 'auth'], function () {
+    Route::get('/', function ()    {
+        // 使用 `Auth` 中间件
+
+        echo 111111;
+    });
+
+    Route::get('user/profile', function () {
+        // 使用 `Auth` 中间件
+
+        echo 222222;
+    });
+});*/
+
+/*Route::group(['prefix' => 'home'], function () {
+    Route::get(['/','HomeController@index'], function ()    {
+        // 匹配包含 "/admin/users" 的 URL
+        echo 1111111;
+    });
+});*/
+
+Route::get('home','Home\HomeController@shows');
