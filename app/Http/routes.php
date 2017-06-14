@@ -46,4 +46,7 @@ Route::get('posts/{post}/comments/{comment}', function ($postId, $commentId) {
     });
 });*/
 
-Route::get('home','Home\HomeController@shows');
+//前台
+Route::get('/','Home\HomeController@shows');
+//后台
+Route::get('/admin','Admin\AdminController@shows');
