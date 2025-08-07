@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 点云可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            min-width: 250px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .control-group input, .control-group select {
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .control-group button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            margin: 5px 0;
+            transition: background 0.3s;
+        }
+
+        .control-group button:hover {
+            background: #45a049;
+        }
+
+        #stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="info">
+            <h2>Three.js 点云可视化</h2>
+            <p>使用鼠标拖拽旋转视角</p>
+            <p>滚轮缩放</p>
+            <p>右键平移</p>
+        </div>
+
+        <div id="controls">
+            <div class="control-group">
+                <label for="pointCloudType">点云类型:</label>
+                <select id="pointCloudType">
+                    <option value="random">随机点云</option>
+                    <option value="sphere">球形点云</option>
+                    <option value="cube">立方体点云</option>
+                    <option value="spiral">螺旋点云</option>
+                    <option value="wave">波浪点云</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="pointCount">点的数量:</label>
+                <input type="range" id="pointCount" min="1000" max="50000" value="10000" step="1000">
+                <span id="pointCountValue">10000</span>
+            </div>
+
+            <div class="control-group">
+                <label for="pointSize">点的大小:</label>
+                <input type="range" id="pointSize" min="1" max="10" value="3" step="0.5">
+                <span id="pointSizeValue">3</span>
+            </div>
+
+            <div class="control-group">
+                <label for="colorMode">颜色模式:</label>
+                <select id="colorMode">
+                    <option value="rainbow">彩虹色</option>
+                    <option value="height">高度色</option>
+                    <option value="distance">距离色</option>
+                    <option value="uniform">统一色</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <button onclick="generatePointCloud()">生成点云</button>
+                <button onclick="toggleAnimation()">切换动画</button>
+                <button onclick="resetCamera()">重置视角</button>
+            </div>
+        </div>
+
+        <div id="stats">
+            <div>FPS: <span id="fps">0</span></div>
+            <div>点数: <span id="pointCountDisplay">0</span></div>
+        </div>
+
+        <div class="loading" id="loading">正在生成点云...</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/stats.min.js"></script>
+
+    <script>
+        // 全局变量
+        let scene, camera, renderer, controls, stats;
+        let pointCloud, pointCloudGeometry, pointCloudMaterial;
+        let animationId;
+        let isAnimating = false;
+
+        // 初始化Three.js场景
+        function init() {
+            // 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+
+            // 创建相机
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 50);
+
+            // 创建渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // 创建控制器
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // 创建统计信息
+            stats = new Stats();
+            stats.dom.style.position = 'absolute';
+            stats.dom.style.top = '0px';
+            stats.dom.style.left = '0px';
+            document.getElementById('container').appendChild(stats.dom);
+
+            // 添加光源
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // 生成初始点云
+            generatePointCloud();
+
+            // 开始渲染循环
+            animate();
+
+            // 窗口大小调整
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // 生成点云
+        function generatePointCloud() {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+
+            // 移除现有的点云
+            if (pointCloud) {
+                scene.remove(pointCloud);
+                pointCloudGeometry.dispose();
+                pointCloudMaterial.dispose();
+            }
+
+            const pointCount = parseInt(document.getElementById('pointCount').value);
+            const pointSize = parseFloat(document.getElementById('pointSize').value);
+            const pointCloudType = document.getElementById('pointCloudType').value;
+            const colorMode = document.getElementById('colorMode').value;
+
+            // 创建几何体
+            pointCloudGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(pointCount * 3);
+            const colors = new Float32Array(pointCount * 3);
+
+            // 根据类型生成点云数据
+            switch (pointCloudType) {
+                case 'random':
+                    generateRandomPoints(positions, colors, pointCount, colorMode);
+                    break;
+                case 'sphere':
+                    generateSpherePoints(positions, colors, pointCount, colorMode);
+                    break;
+                case 'cube':
+                    generateCubePoints(positions, colors, pointCount, colorMode);
+                    break;
+                case 'spiral':
+                    generateSpiralPoints(positions, colors, pointCount, colorMode);
+                    break;
+                case 'wave':
+                    generateWavePoints(positions, colors, pointCount, colorMode);
+                    break;
+            }
+
+            pointCloudGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            pointCloudGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            // 创建材质
+            pointCloudMaterial = new THREE.PointsMaterial({
+                size: pointSize,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            // 创建点云
+            pointCloud = new THREE.Points(pointCloudGeometry, pointCloudMaterial);
+            scene.add(pointCloud);
+
+            // 更新统计信息
+            document.getElementById('pointCountDisplay').textContent = pointCount;
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // 生成随机点云
+        function generateRandomPoints(positions, colors, count, colorMode) {
+            for (let i = 0; i < count; i++) {
+                const x = (Math.random() - 0.5) * 100;
+                const y = (Math.random() - 0.5) * 100;
+                const z = (Math.random() - 0.5) * 100;
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                setColor(colors, i, x, y, z, colorMode);
+            }
+        }
+
+        // 生成球形点云
+        function generateSpherePoints(positions, colors, count, colorMode) {
+            for (let i = 0; i < count; i++) {
+                const phi = Math.acos(-1 + (2 * i) / count);
+                const theta = Math.sqrt(count * Math.PI) * phi;
+                const radius = 30;
+
+                const x = radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.sin(theta) * Math.sin(phi);
+                const z = radius * Math.cos(phi);
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                setColor(colors, i, x, y, z, colorMode);
+            }
+        }
+
+        // 生成立方体点云
+        function generateCubePoints(positions, colors, count, colorMode) {
+            for (let i = 0; i < count; i++) {
+                const x = (Math.random() - 0.5) * 60;
+                const y = (Math.random() - 0.5) * 60;
+                const z = (Math.random() - 0.5) * 60;
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                setColor(colors, i, x, y, z, colorMode);
+            }
+        }
+
+        // 生成螺旋点云
+        function generateSpiralPoints(positions, colors, count, colorMode) {
+            for (let i = 0; i < count; i++) {
+                const t = (i / count) * 4 * Math.PI;
+                const radius = 20 + (i / count) * 10;
+                const x = radius * Math.cos(t);
+                const y = radius * Math.sin(t);
+                const z = (i / count) * 40 - 20;
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                setColor(colors, i, x, y, z, colorMode);
+            }
+        }
+
+        // 生成波浪点云
+        function generateWavePoints(positions, colors, count, colorMode) {
+            for (let i = 0; i < count; i++) {
+                const x = (i / count - 0.5) * 100;
+                const z = (Math.random() - 0.5) * 100;
+                const y = 20 * Math.sin(x * 0.1) + 10 * Math.sin(z * 0.1);
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                setColor(colors, i, x, y, z, colorMode);
+            }
+        }
+
+        // 设置颜色
+        function setColor(colors, index, x, y, z, colorMode) {
+            let r, g, b;
+
+            switch (colorMode) {
+                case 'rainbow':
+                    const hue = (index / 10000) % 1;
+                    const color = new THREE.Color().setHSL(hue, 1, 0.5);
+                    r = color.r;
+                    g = color.g;
+                    b = color.b;
+                    break;
+                case 'height':
+                    const height = (y + 50) / 100;
+                    r = height;
+                    g = 1 - height;
+                    b = 0.5;
+                    break;
+                case 'distance':
+                    const distance = Math.sqrt(x * x + y * y + z * z) / 100;
+                    r = Math.min(distance, 1);
+                    g = Math.max(0, 1 - distance);
+                    b = 0.5;
+                    break;
+                case 'uniform':
+                    r = 0.8;
+                    g = 0.8;
+                    b = 0.8;
+                    break;
+            }
+
+            colors[index * 3] = r;
+            colors[index * 3 + 1] = g;
+            colors[index * 3 + 2] = b;
+        }
+
+        // 切换动画
+        function toggleAnimation() {
+            isAnimating = !isAnimating;
+            if (isAnimating) {
+                document.querySelector('button[onclick="toggleAnimation()"]').textContent = '停止动画';
+            } else {
+                document.querySelector('button[onclick="toggleAnimation()"]').textContent = '开始动画';
+            }
+        }
+
+        // 重置相机
+        function resetCamera() {
+            camera.position.set(0, 0, 50);
+            controls.reset();
+        }
+
+        // 窗口大小调整
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 渲染循环
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+
+            if (isAnimating && pointCloud) {
+                pointCloud.rotation.y += 0.005;
+                pointCloud.rotation.x += 0.002;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+            stats.update();
+
+            // 更新FPS显示
+            document.getElementById('fps').textContent = Math.round(stats.getFPS());
+        }
+
+        // 事件监听器
+        document.getElementById('pointCount').addEventListener('input', function() {
+            document.getElementById('pointCountValue').textContent = this.value;
+        });
+
+        document.getElementById('pointSize').addEventListener('input', function() {
+            document.getElementById('pointSizeValue').textContent = this.value;
+        });
+
+        // 初始化应用
+        init();
+    </script>
+</body>
+</html>
